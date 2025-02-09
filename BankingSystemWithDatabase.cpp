@@ -1,13 +1,13 @@
 #include <iostream>
-#include <vector>
 #include <cstdlib>
 #include <chrono>
-#include "lib\jdbc\mysql_driver.h"
-#include "lib\jdbc\mysql_connection.h"
+#include <mysql_driver.h>
+#include <mysql_connection.h>
+#include <vector>
+#include <limits>
 
-
-#include "lib\jdbc\cppconn\prepared_statement.h"
-#include "lib\jdbc\cppconn\resultset.h"
+#include <cppconn/prepared_statement.h>
+#include <cppconn/resultset.h>
 
 using namespace std;
 
@@ -20,6 +20,7 @@ private:
     string accountType;
 
 public:
+    // Constructor for new account creation
     Account(string accountHolder, long accBalance, string accountType)
     {
         //use the current time as seed 
@@ -32,6 +33,12 @@ public:
         this->accountNum = randNum;
         this->accBalance = accBalance;
         this->accountType = accountType;
+    }
+
+    // Constructor for existing account (from database)
+    Account(string accountHolder, long accountNum, long accBalance, string accountType)
+        : accountHolder(accountHolder), accountNum(accountNum),
+        accBalance(accBalance), accountType(accountType) {
     }
 
     long getAccNum() const
@@ -127,10 +134,11 @@ public:
             if (res->next())
             {
                 string accountHolder = res->getString("accountHolder");
+                long accountNumber = res->getInt64("accountNum");
                 long accBalance = res->getInt64("accBalance");
                 string accountType = res->getString("accountType");
 
-                Account* account = new Account(accountHolder, accBalance, accountType);
+                Account* account = new Account(accountHolder, accountNumber, accBalance, accountType);
                 delete pstmt;
                 delete res;
                 return account;
@@ -146,8 +154,13 @@ public:
         return nullptr;
     }
 
-    void deposit(int amount, long accNum)
+    void deposit(long amount, long accNum)
     {
+        if (amount <= 0) {
+            std::cout << "Deposit amount must be positive!" << std::endl;
+            return;
+        }
+
         Account* account = getUserbyAccNum(accNum);
         if (account)
         {
@@ -161,6 +174,7 @@ public:
                 pstmt->executeUpdate();
 
                 std::cout << "Balance Updated in Database!!" << std::endl;
+                std::cout << "New Balance: " << account->getBal() << std::endl;
                 delete pstmt;
             }
             catch (sql::SQLException& e)
@@ -176,8 +190,13 @@ public:
         }
     }
 
-    void withdraw(int amount, long accNum)
+    void withdraw(long amount, long accNum)
     {
+        if (amount <= 0) {
+            std::cout << "Withdrawal amount must be positive!" << std::endl;
+            return;
+        }
+
         Account* account = getUserbyAccNum(accNum);
         if (account != nullptr)
         {
@@ -193,13 +212,13 @@ public:
                     pstmt->executeUpdate();
 
                     std::cout << "Balance Updated in Database!!" << std::endl;
+                    std::cout << "New Balance: " << account->getBal() << std::endl;
                     delete pstmt;
                 }
                 catch (sql::SQLException& e)
                 {
                     std::cout << "Error updating balance: " << e.what() << std::endl;
                 }
-
             }
             else
             {
@@ -214,7 +233,7 @@ public:
         }
     }
 
-    void checkBal(int accNum)
+    void checkBal(long accNum)
     {
         Account* account = getUserbyAccNum(accNum);
         if (account != nullptr)
@@ -235,12 +254,14 @@ public:
             sql::Statement* stmt = con->createStatement();
             sql::ResultSet* res = stmt->executeQuery("SELECT * FROM accounts");
 
-            std::cout << "List of all the accounts: " << std::endl;
+            std::cout << "List of all accounts:" << std::endl;
+            std::cout << "Account Number  |  Balance" << std::endl;
+            std::cout << "------------------------" << std::endl;
             while (res->next())
             {
                 long accountNum = res->getInt64("accountNum");
                 long balance = res->getInt64("accBalance");
-                std::cout << accountNum << "  " << balance << std::endl;
+                std::cout << accountNum << "  |  " << balance << std::endl;
             }
 
             delete stmt;
@@ -253,21 +274,28 @@ public:
     }
 };
 
+void clearInputBuffer() {
+    std::cin.clear();
+    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+}
+
 int main() {
     Bank bank;
 
     do
     {
-        std::cout << "--------Banking System--------" << std::endl;
+        std::cout << "\n--------Banking System--------" << std::endl;
         std::cout << "1. Create Account" << std::endl;
         std::cout << "2. Deposit" << std::endl;
         std::cout << "3. Withdraw" << std::endl;
         std::cout << "4. Account Details" << std::endl;
-        std::cout << "5. Exit" << std::endl;
+        std::cout << "5. Display All Accounts" << std::endl;
+        std::cout << "6. Exit" << std::endl;
 
         char ch;
         std::cout << "Enter your choice: ";
         std::cin >> ch;
+        clearInputBuffer();
 
         switch (ch)
         {
@@ -278,11 +306,12 @@ int main() {
             long balance;
 
             std::cout << "Enter Your Name: ";
-            cin.ignore();
             getline(cin, name);
 
             std::cout << "Enter the type of account you want(C/S): ";
             std::cin >> aT;
+            clearInputBuffer();
+
             if (aT == 'c' || aT == 'C')
                 accType = "Current";
             else if (aT == 's' || aT == 'S')
@@ -294,7 +323,13 @@ int main() {
             }
 
             std::cout << "Enter amount you want to deposit: ";
-            std::cin >> balance;
+            if (!(std::cin >> balance)) {
+                std::cout << "Invalid amount entered!" << std::endl;
+                clearInputBuffer();
+                break;
+            }
+            clearInputBuffer();
+
             if (balance < 0)
             {
                 std::cout << "Initial amount cannot be negative." << std::endl;
@@ -310,10 +345,19 @@ int main() {
             long accNum, amount;
 
             std::cout << "Enter Account Number: ";
-            std::cin >> accNum;
+            if (!(std::cin >> accNum)) {
+                std::cout << "Invalid account number!" << std::endl;
+                clearInputBuffer();
+                break;
+            }
 
             std::cout << "Enter amount to deposit: ";
-            std::cin >> amount;
+            if (!(std::cin >> amount)) {
+                std::cout << "Invalid amount!" << std::endl;
+                clearInputBuffer();
+                break;
+            }
+            clearInputBuffer();
 
             bank.deposit(amount, accNum);
             break;
@@ -323,10 +367,19 @@ int main() {
             long accNum, amount;
 
             std::cout << "Enter Account Number: ";
-            std::cin >> accNum;
+            if (!(std::cin >> accNum)) {
+                std::cout << "Invalid account number!" << std::endl;
+                clearInputBuffer();
+                break;
+            }
 
             std::cout << "Enter amount to withdraw: ";
-            std::cin >> amount;
+            if (!(std::cin >> amount)) {
+                std::cout << "Invalid amount!" << std::endl;
+                clearInputBuffer();
+                break;
+            }
+            clearInputBuffer();
 
             bank.withdraw(amount, accNum);
             break;
@@ -336,10 +389,14 @@ int main() {
             long accNum;
 
             std::cout << "Enter Account Number: ";
-            std::cin >> accNum;
+            if (!(std::cin >> accNum)) {
+                std::cout << "Invalid account number!" << std::endl;
+                clearInputBuffer();
+                break;
+            }
+            clearInputBuffer();
 
             Account* account = bank.getUserbyAccNum(accNum);
-
             if (account)
             {
                 account->getDetails();
@@ -353,6 +410,11 @@ int main() {
         }
         case '5':
         {
+            bank.displayAccounts();
+            break;
+        }
+        case '6':
+        {
             std::cout << "Thanks for using the banking system." << std::endl;
             break;
         }
@@ -360,7 +422,7 @@ int main() {
             std::cout << "Enter valid choice." << std::endl;
         }
 
-        if (ch == '5')
+        if (ch == '6')
             break;
     } while (true);
 
